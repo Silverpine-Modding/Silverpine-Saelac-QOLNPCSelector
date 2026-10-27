@@ -26,28 +26,10 @@ public sealed partial class Plugin
 
     private static void AddSelectionToolsButton(
         GeneralCustomContentEditorUI editor,
-        GameObject root,
-        IReadOnlyList<GameObject> originalRows)
+        GameObject root)
     {
         try
         {
-            GameObject? backRow = null;
-            foreach (GameObject candidate in originalRows)
-            {
-                TMPro.TextMeshProUGUI[] labels =
-                    candidate.GetComponentsInChildren<TMPro.TextMeshProUGUI>(
-                        includeInactive: true);
-                if (labels.Length > 0
-                    && string.Equals(
-                        labels[0].text,
-                        "Back",
-                        StringComparison.Ordinal))
-                {
-                    backRow = candidate;
-                    break;
-                }
-            }
-
             var item = new ListUIItem_Generic(
                 "NPC Selection Tools",
                 null,
@@ -59,12 +41,7 @@ public sealed partial class Plugin
                     + "selection tools."
             };
 
-            GameObject instantiated = InstantiateListItem(root, item);
-            if (backRow != null)
-            {
-                instantiated.transform.SetSiblingIndex(
-                    backRow.transform.GetSiblingIndex());
-            }
+            InsertMenuItemAtTop(root, item, 2);
         }
         catch (Exception exception)
         {

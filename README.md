@@ -3,6 +3,11 @@
 A BepInEx plugin for Silverpine 1.7.3 that adds an enable checkbox to every
 NPC row on **Show Loaded Custom Content Definitions**.
 
+The **Enable / Disable One SILC**, **Enable / Disable Connected SILCs**, and
+**NPC Selection Tools** buttons appear above all character definitions, in that
+order, each time the page is opened. Returning from a character or tool screen
+also resets the list to the top after the menu finishes rebuilding.
+
 Each NPC uses Silverpine's complete native toggle row so it participates in
 the base list's normal layout and render order. Selecting the NPC name still
 opens the full custom NPC editor. Selecting the checkbox instead changes the
@@ -73,6 +78,12 @@ the same dependency group in reverse. File moves and runtime registration are
 transactional; completed work is rolled back if a later step fails. The
 single-file mode intentionally does not move dependencies and warns when it
 leaves a broken link.
+
+If a SILC being enabled is already registered in memory (for example, after
+moving its file outside the game), the entire enable operation stops before
+moving files. Existing runtime definitions are preserved. Failed-load cleanup
+and transaction rollback also check registration ownership before unloading.
+Restart Silverpine to reconcile externally moved files before retrying.
 
 Before single-file mode disables a Player Character that still has enabled NPC
 dependents, it displays the broken links and requires an explicit **Disable

@@ -18,7 +18,7 @@ public sealed partial class Plugin : BaseUnityPlugin
     public const string PluginGuid =
         "renegadex.silverpine.qolnpcselector";
     public const string PluginName = "QOLNPCSelector";
-    public const string PluginVersion = "1.3.0";
+    public const string PluginVersion = "1.3.2";
 
     private const string TogglePrefabPath =
         "MiscPrefabs/ListUI/ListUIItemPrefab_Toggle";
@@ -91,8 +91,23 @@ public sealed partial class Plugin : BaseUnityPlugin
             + "lifetime.");
     }
 
-    internal static void AddEnableCheckboxes(
+    internal static List<GameObject> SnapshotEditorRows(
         GeneralCustomContentEditorUI editor)
+    {
+        var rows = new List<GameObject>();
+        GameObject? root = EditorRootField?.GetValue(editor) as GameObject;
+        if (root != null)
+        {
+            foreach (Transform child in root.transform)
+                rows.Add(child.gameObject);
+        }
+
+        return rows;
+    }
+
+    internal static void AddEnableCheckboxes(
+        GeneralCustomContentEditorUI editor,
+        IReadOnlyList<GameObject> outgoingRows)
     {
         GameObject? root = EditorRootField?.GetValue(editor) as GameObject;
         if (root == null)
@@ -101,6 +116,17 @@ public sealed partial class Plugin : BaseUnityPlugin
                 "Could not obtain the custom-content list root; NPC enable "
                 + "checkboxes were not added.");
             return;
+        }
+
+        // DrawIntoRoot schedules the old screen for Destroy at frame end.
+        // Hide those rows now and exclude them from the new list snapshot.
+        // Otherwise returning from an editor can reuse an outgoing Back row
+        // or create duplicate NPC toggles from rows awaiting destruction.
+        var outgoing = new HashSet<GameObject>(outgoingRows);
+        foreach (GameObject row in outgoingRows)
+        {
+            if (row != null && row.transform.parent == root.transform)
+                row.SetActive(false);
         }
 
         GameObject? togglePrefab = Resources.Load<GameObject>(
@@ -118,7 +144,10 @@ public sealed partial class Plugin : BaseUnityPlugin
             StringComparer.Ordinal);
         var originalRows = new List<GameObject>();
         foreach (Transform child in root.transform)
-            originalRows.Add(child.gameObject);
+        {
+            if (!outgoing.Contains(child.gameObject))
+                originalRows.Add(child.gameObject);
+        }
 
         int added = 0;
 
@@ -168,8 +197,8 @@ public sealed partial class Plugin : BaseUnityPlugin
                 + $"{definitions.Count} NPC definition(s) are loaded.");
         }
 
-        AddDefinitionFileButtons(editor, root, originalRows);
-        AddSelectionToolsButton(editor, root, originalRows);
+        AddDefinitionFileButtons(editor, root);
+        AddSelectionToolsButton(editor, root);
     }
 
     private static void ReplaceWithEnableRow(
@@ -334,14 +363,33 @@ public sealed partial class Plugin : BaseUnityPlugin
     "ShowLoadedCustomContentDefinitions")]
 internal static class LoadedCustomContentCheckboxPatch
 {
+    [HarmonyPrefix]
+    private static void CaptureOutgoingRows(
+        GeneralCustomContentEditorUI __instance,
+        out List<GameObject> __state)
+    {
+        __state = new List<GameObject>();
+        try
+        {
+            __state = Plugin.SnapshotEditorRows(__instance);
+        }
+        catch (Exception exception)
+        {
+            Plugin.Log.LogError(
+                "Could not capture the outgoing custom-content screen.\n"
+                + exception);
+        }
+    }
+
     [HarmonyPostfix]
     [HarmonyPriority(Priority.Last)]
     private static void AddCheckboxes(
-        GeneralCustomContentEditorUI __instance)
+        GeneralCustomContentEditorUI __instance,
+        List<GameObject> __state)
     {
         try
         {
-            Plugin.AddEnableCheckboxes(__instance);
+            Plugin.AddEnableCheckboxes(__instance, __state);
         }
         catch (Exception exception)
         {

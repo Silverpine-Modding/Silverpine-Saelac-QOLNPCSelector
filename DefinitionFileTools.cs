@@ -59,12 +59,10 @@ public sealed partial class Plugin
 
     private static void AddDefinitionFileButtons(
         GeneralCustomContentEditorUI editor,
-        GameObject root,
-        IReadOnlyList<GameObject> originalRows)
+        GameObject root)
     {
         try
         {
-            GameObject? backRow = FindBackRow(originalRows);
             var singular = new ListUIItem_Generic(
                 "Enable / Disable One SILC",
                 null,
@@ -90,8 +88,8 @@ public sealed partial class Plugin
                     + "Player Character dependency as one transaction."
             };
 
-            InsertBeforeBack(root, singular, backRow);
-            InsertBeforeBack(root, connected, backRow);
+            InsertMenuItemAtTop(root, singular, 0);
+            InsertMenuItemAtTop(root, connected, 1);
         }
         catch (Exception exception)
         {
@@ -203,7 +201,7 @@ public sealed partial class Plugin
                     SearchText = entry.Name + "\n"
                         + entry.FileName + "\n"
                         + entry.KindLabel + "\n"
-                        + (entry.IsEnabled ? "enabled disable" : "disabled enable")
+                        + (entry.IsEnabled ? "enabled" : "disabled")
                         + "\n" + entry.PlayerCharacterName
                 });
             }
@@ -547,6 +545,14 @@ public sealed partial class Plugin
         var loaded = new List<RuntimeDefinitionRecord>();
         try
         {
+            // Check the whole batch before touching any file or runtime UI.
+            foreach (FileMoveRecord move in moves)
+            {
+                DefinitionRegistrationGuard.EnsureAvailable(
+                    FindLoadedDefinition(move.Entry),
+                    move.Entry.Name);
+            }
+
             // Moves are sorted Player-Character-first for enabling so every
             // NPC dependency is registered before its NPC definition.
             foreach (FileMoveRecord move in moves)
@@ -592,26 +598,18 @@ public sealed partial class Plugin
             player.characterSelectionUI = selection;
         }
 
-        try
-        {
-            definition.Load();
-            return definition;
-        }
-        catch
-        {
-            try
-            {
-                definition.Unload();
-            }
-            catch (Exception cleanupException)
-            {
-                Log.LogError(
-                    "Could not clean up a partially loaded definition \""
-                    + move.Entry.Name + "\".\n" + cleanupException);
-            }
+        LoadRuntimeDefinition(definition);
+        return definition;
+    }
 
-            throw;
-        }
+    private static void LoadRuntimeDefinition(CustomContentDefinition definition)
+    {
+        DefinitionRegistrationGuard.Load(
+            definition,
+            definition.customContentName,
+            () => FindLoadedDefinition(definition),
+            candidate => candidate.Load(),
+            candidate => candidate.Unload());
     }
 
     private static void RollBackMoves(
@@ -649,7 +647,7 @@ public sealed partial class Plugin
         {
             try
             {
-                record.Definition.Load();
+                LoadRuntimeDefinition(record.Definition);
             }
             catch (Exception exception)
             {
@@ -669,7 +667,11 @@ public sealed partial class Plugin
             RuntimeDefinitionRecord record = definitions[index];
             try
             {
-                record.Definition.Unload();
+                DefinitionRegistrationGuard.UnloadOwned(
+                    record.Definition,
+                    record.Definition.customContentName,
+                    () => FindLoadedDefinition(record.Definition),
+                    candidate => candidate.Unload());
             }
             catch (Exception exception)
             {
@@ -996,6 +998,20 @@ public sealed partial class Plugin
             : FindLoadedPlayerCharacter(entry.Name);
     }
 
+    private static CustomContentDefinition? FindLoadedDefinition(
+        CustomContentDefinition definition)
+    {
+        // Resolve by the actual deserialized type and name, not only the
+        // filename, before allowing name-based native Load/Unload calls.
+        if (definition is CustomContentDefinition_NPC)
+            return FindLoadedNpc(definition.customContentName);
+        if (definition is CustomContentDefinition_PlayerCharacter)
+            return FindLoadedPlayerCharacter(definition.customContentName);
+
+        throw new InvalidDataException(
+            "Only NPC and Player Character SILCs can be enabled here.");
+    }
+
     private static CustomContentDefinition_NPC? FindLoadedNpc(string name)
     {
         foreach (KeyValuePair<string, CustomContentDefinition_NPC> pair
@@ -1071,39 +1087,5 @@ public sealed partial class Plugin
         if (enabling)
             return player ? 0 : 1;
         return player ? 1 : 0;
-    }
-
-    private static GameObject? FindBackRow(
-        IReadOnlyList<GameObject> rows)
-    {
-        foreach (GameObject candidate in rows)
-        {
-            TMPro.TextMeshProUGUI[] labels =
-                candidate.GetComponentsInChildren<TMPro.TextMeshProUGUI>(
-                    includeInactive: true);
-            if (labels.Length > 0
-                && string.Equals(
-                    labels[0].text,
-                    "Back",
-                    StringComparison.Ordinal))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
-    private static void InsertBeforeBack(
-        GameObject root,
-        ListUIItem item,
-        GameObject? backRow)
-    {
-        GameObject instantiated = InstantiateListItem(root, item);
-        if (backRow != null)
-        {
-            instantiated.transform.SetSiblingIndex(
-                backRow.transform.GetSiblingIndex());
-        }
     }
 }
